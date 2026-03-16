@@ -78,7 +78,7 @@
         let geojsonEstadosMexico = null;
         let estadoActual = null; 
 
-        // Diccionario para convertir los nombres de estados de EE.UU. a sus abreviaturas (Requisito de Plotly)
+        // Diccionario de EE.UU.
         const usaAbreviaturas = {
             'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
             'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
@@ -91,7 +91,6 @@
             'Dakota del Sur': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
             'Virginia': 'VA', 'Washington': 'WA', 'Virginia Occidental': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
         };
-        // Para cuando queramos mostrar el nombre completo de vuelta en el título
         const usaNombresCompletos = Object.fromEntries(Object.entries(usaAbreviaturas).map(([k, v]) => [v, k]));
 
         function limpiarTexto(texto) {
@@ -99,7 +98,7 @@
             return texto.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         }
 
-        // 1. Cargar el mapa de México (Plotly ya trae el de EE. UU. integrado)
+        // Cargar mapa de México
         fetch('https://raw.githubusercontent.com/angelnmara/geojson/master/mexicoHigh.json')
             .then(res => res.json())
             .then(estados => {
@@ -108,7 +107,6 @@
             });
 
         function cargarDatosCSV() {
-            // AHORA LEEMOS DIRECTAMENTE TU ARCHIVO FORMATEADO, YA NO OCUPAMOS COORDENADAS
             Papa.parse("datos_dashboard_seguro.csv", {
                 download: true,
                 header: true,
@@ -124,15 +122,13 @@
             datosOriginales = [];
             
             dataCSV.forEach(d => {
-                // Solo nos interesan envíos que tengan Fecha y País
                 if(d['Fecha de Creación'] && d['País']) {
                     let partesFecha = d['Fecha de Creación'].split('-');
                     if(partesFecha.length >= 2) {
                         d.Anio = partesFecha[0];
-                        d.Mes = parseInt(partesFecha[1]).toString(); // Quita los ceros a la izquierda
+                        d.Mes = parseInt(partesFecha[1]).toString();
                     }
                     
-                    // Normalizar el estado según el país para que coincidan con los mapas
                     if(d.País === 'México') {
                         if(d.Estado === 'Estado de México') d.Estado_Geo = 'México';
                         else if(d.Estado === 'Michoacán de Ocampo') d.Estado_Geo = 'Michoacán';
@@ -141,7 +137,7 @@
                         else d.Estado_Geo = d.Estado;
                     } 
                     else if (d.País === 'Estados Unidos') {
-                        d.Estado_Geo = usaAbreviaturas[d.Estado] || d.Estado; // Pasamos a siglas (ej. Texas -> TX)
+                        d.Estado_Geo = usaAbreviaturas[d.Estado] || d.Estado; 
                     }
 
                     datosOriginales.push(d);
@@ -164,9 +160,8 @@
                 contenedorAnios.appendChild(label);
             });
 
-            // Asignar eventos a todos los controles
             document.getElementById('filtro-pais').addEventListener('change', () => {
-                estadoActual = null; // Reiniciar vista al cambiar de país
+                estadoActual = null; 
                 document.getElementById('btn-volver').style.display = 'none';
                 actualizarDashboard();
             });
@@ -215,7 +210,6 @@
                 dragmode: false
             };
 
-            // Configuración dinámica dependiendo del País
             if (pais === 'México') {
                 trace = {
                     type: 'choropleth',
@@ -225,19 +219,25 @@
                     featureidkey: 'properties.name',
                     colorscale: 'Reds',
                     showscale: true,
-                    marker: { line: { color: '#ffffff', width: 0.5 } }
+                    marker: { line: { color: '#ffffff', width: 0.5 } },
+                    hovertemplate: '<b>%{location}</b><br>Total Envíos: %{z}<extra></extra>'
                 };
                 layout.geo = { fitbounds: "locations", visible: false };
             } 
             else if (pais === 'Estados Unidos') {
+                // Generamos un arreglo con los nombres completos para el Hover
+                const nombresCompletos = estados.map(sigla => usaNombresCompletos[sigla] || sigla);
+
                 trace = {
                     type: 'choropleth',
-                    locationmode: 'USA-states', // Usa el mapa nativo de Plotly para EE.UU.
-                    locations: estados, // Son las siglas (TX, CA, NY...)
+                    locationmode: 'USA-states',
+                    locations: estados,
                     z: valores,
-                    colorscale: 'Blues', // Ponemos EE.UU. en azul para diferenciarlo visualmente
+                    text: nombresCompletos, // Pasamos el nombre completo de la traducción
+                    colorscale: 'Greens', // Cambiado a Verdes
                     showscale: true,
-                    marker: { line: { color: '#ffffff', width: 0.5 } }
+                    marker: { line: { color: '#ffffff', width: 0.5 } },
+                    hovertemplate: '<b>%{text}</b><br>Total Envíos: %{z}<extra></extra>' // %{text} lee el nombre completo
                 };
                 layout.geo = { scope: 'usa' };
             }
@@ -254,7 +254,6 @@
         }
 
         function dibujarGraficaBarras(datos, estadoSeleccionado, pais) {
-            // Si es USA, convertimos la sigla (ej. "TX") al nombre real ("Texas") para el título
             let nombreEstadoTitulo = pais === 'Estados Unidos' ? (usaNombresCompletos[estadoSeleccionado] || estadoSeleccionado) : estadoSeleccionado;
             
             document.getElementById('titulo-mapa').textContent = `Top Ciudades con Envíos en: ${nombreEstadoTitulo}`;
@@ -276,9 +275,9 @@
             let x = ciudadesArray.map(c => c.nombre);
             let y = ciudadesArray.map(c => c.conteo);
 
-            // Usar Rojo para México y Azul para USA en las barras
-            let escalaColor = pais === 'México' ? 'Reds' : 'Blues';
-            let colorBorde = pais === 'México' ? '#b71c1c' : '#0d47a1';
+            // Cambiar los colores de las barras dependiendo del país seleccionado
+            let escalaColor = pais === 'México' ? 'Reds' : 'Greens';
+            let colorBorde = pais === 'México' ? '#b71c1c' : '#1b5e20';
 
             const trace = {
                 x: x,
@@ -290,7 +289,8 @@
                     line: { color: colorBorde, width: 1 }
                 },
                 text: y, 
-                textposition: 'auto'
+                textposition: 'auto',
+                hovertemplate: '<b>%{x}</b><br>Envíos: %{y}<extra></extra>'
             };
 
             const layout = {
