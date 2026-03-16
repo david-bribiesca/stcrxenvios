@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Envíos ST CRX</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; }
+        header { background-color: #1a237e; color: white; padding: 15px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .container { display: flex; padding: 20px; gap: 20px; }
+        .sidebar { background: white; padding: 20px; border-radius: 8px; width: 280px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); height: fit-content; }
+        .main-content { flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        h1 { margin: 0; font-size: 24px; }
+        h2 { margin-top: 0; font-size: 18px; color: #333; margin-bottom: 15px; }
+        label.filtro-titulo { display: block; margin: 15px 0 10px; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        
+        .grid-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+        .opcion-item { display: flex; align-items: center; font-size: 14px; color: #444; }
+        .opcion-item input { margin-right: 8px; cursor: pointer; }
+
+        .btn-volver { display: none; background: #e53935; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; margin-top: 15px; width: 100%; font-weight: bold; font-size: 14px;}
+        .btn-volver:hover { background: #c62828; }
+        #mapa { width: 100%; height: 600px; }
+        #loading { color: #1a237e; font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>📦 Panel Interactivo de Envíos</h1>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <h2>Filtros</h2>
+            
+            <label class="filtro-titulo">Años</label>
+            <div class="grid-opciones" id="filtro-anios">
+                </div>
+
+            <label class="filtro-titulo">Meses</label>
+            <div class="grid-opciones" id="filtro-meses">
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="1" checked> Enero</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="2" checked> Febrero</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="3" checked> Marzo</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="4" checked> Abril</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="5" checked> Mayo</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="6" checked> Junio</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="7" checked> Julio</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="8" checked> Agosto</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="9" checked> Septiembre</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="10" checked> Octubre</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="11" checked> Noviembre</label>
+                <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="12" checked> Diciembre</label>
+            </div>
+
+            <button id="btn-volver" class="btn-volver">🔙 Volver al Mapa Nacional</button>
+        </div>
+
+        <div class="main-content">
+            <div id="loading">Cargando base de datos geográfica...</div>
+            <h2 id="titulo-mapa">Mapa Coroplético Nacional</h2>
+            <div id="mapa"></div>
+        </div>
+    </div>
+
+    <script>
+        let datosOriginales = [];
+        let geojsonEstados = null;
+        let estadoActual = null; 
+
+        // Función para limpiar nombres y agrupar bien las ciudades (quita acentos y mayúsculas)
+        function limpiarTexto(texto) {
+            if (!texto) return "";
+            return texto.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        }
+
+        // 1. Cargar geometrías de los estados
+        fetch('https://raw.githubusercontent.com/angelnmara/geojson/master/mexicoHigh.json')
+            .then(res => res.json())
+            .then(estados => {
+                geojsonEstados = estados;
+                document.getElementById('loading').style.display = 'none';
+                cargarDatosCSV();
+            });
+
+        function cargarDatosCSV() {
+            Papa.parse("datos_web_dashboard.csv", {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    datosOriginales = results.data;
+                    inicializarFiltros();
+                    actualizarDashboard();
+                }
+            });
+        }
+
+        function inicializarFiltros() {
+            // Extraer años únicos y crear las casillas
+            const anios = [...new Set(datosOriginales.map(d => d.Anio).filter(a => a))].sort();
+            const contenedorAnios = document.getElementById('filtro-anios');
+            contenedorAnios.innerHTML = ''; // Limpiar por si acaso
+            
+            anios.forEach(anio => {
+                const label = document.createElement('label');
+                label.className = 'opcion-item';
+                label.innerHTML = `<input type="checkbox" class="anio-checkbox" value="${anio}" checked> ${anio}`;
+                contenedorAnios.appendChild(label);
+            });
+
+            // Asignar eventos de actualización a los checkboxes de años
+            document.querySelectorAll('.anio-checkbox').forEach(cb => {
+                cb.addEventListener('change', actualizarDashboard);
+            });
+            
+            // Asignar eventos a los checkboxes de meses
+            document.querySelectorAll('.mes-checkbox').forEach(cb => {
+                cb.addEventListener('change', actualizarDashboard);
+            });
+
+            // Evento para el botón de regresar al mapa
+            document.getElementById('btn-volver').addEventListener('click', () => {
+                estadoActual = null;
+                document.getElementById('btn-volver').style.display = 'none';
+                actualizarDashboard();
+            });
+        }
+
+        function actualizarDashboard() {
+            const aniosSeleccionados = Array.from(document.querySelectorAll('.anio-checkbox:checked')).map(cb => cb.value);
+            const mesesSeleccionados = Array.from(document.querySelectorAll('.mes-checkbox:checked')).map(cb => cb.value);
+
+            let datosFiltrados = datosOriginales.filter(d => {
+                return aniosSeleccionados.includes(d.Anio) && mesesSeleccionados.includes(d.Mes);
+            });
+
+            if (estadoActual === null) {
+                dibujarMapaNacional(datosFiltrados);
+            } else {
+                dibujarGraficaBarras(datosFiltrados, estadoActual);
+            }
+        }
+
+        function dibujarMapaNacional(datos) {
+            document.getElementById('titulo-mapa').textContent = "Mapa Nacional (Clic en un estado para ver gráfica de ciudades)";
+            
+            let conteoEstados = {};
+            datos.forEach(d => {
+                if(d.Estado_Geo) {
+                    conteoEstados[d.Estado_Geo] = (conteoEstados[d.Estado_Geo] || 0) + 1;
+                }
+            });
+
+            const estados = Object.keys(conteoEstados);
+            const valores = Object.values(conteoEstados);
+
+            const trace = {
+                type: 'choropleth',
+                geojson: geojsonEstados,
+                locations: estados,
+                z: valores,
+                featureidkey: 'properties.name',
+                colorscale: 'Reds',
+                showscale: true,
+                marker: { line: { color: '#ffffff', width: 0.5 } }
+            };
+
+            const layout = {
+                geo: { fitbounds: "locations", visible: false },
+                margin: { t: 0, b: 0, l: 0, r: 0 },
+                dragmode: false
+            };
+
+            Plotly.newPlot('mapa', [trace], layout, {responsive: true});
+
+            // Evento: Al hacer clic en el mapa, pasamos a la gráfica de barras
+            document.getElementById('mapa').on('plotly_click', function(data){
+                if (data.points.length > 0) {
+                    estadoActual = data.points[0].location;
+                    document.getElementById('btn-volver').style.display = 'block';
+                    actualizarDashboard();
+                }
+            });
+        }
+
+        function dibujarGraficaBarras(datos, estadoSeleccionado) {
+            document.getElementById('titulo-mapa').textContent = `Top Ciudades con Envíos en: ${estadoSeleccionado}`;
+
+            // Filtrar solo las ciudades del estado clickeado
+            let datosEstado = datos.filter(d => d.Estado_Geo === estadoSeleccionado);
+            
+            let conteoUnificado = {};
+
+            // Agrupamos usando la función para limpiar acentos y mayúsculas
+            datosEstado.forEach(d => {
+                let ciudadLimpia = limpiarTexto(d.Ciudad);
+                if (!conteoUnificado[ciudadLimpia]) {
+                    // Guardamos el nombre bonito (original) para mostrarlo en la gráfica
+                    conteoUnificado[ciudadLimpia] = { nombre: d.Ciudad, conteo: 0 };
+                }
+                conteoUnificado[ciudadLimpia].conteo += 1;
+            });
+
+            // Convertir el objeto a un arreglo y ordenarlo de mayor a menor
+            let ciudadesArray = Object.values(conteoUnificado).sort((a, b) => b.conteo - a.conteo);
+            
+            // Separar nombres y valores para la gráfica
+            let x = ciudadesArray.map(c => c.nombre);
+            let y = ciudadesArray.map(c => c.conteo);
+
+            const trace = {
+                x: x,
+                y: y,
+                type: 'bar',
+                marker: { 
+                    color: y, // El color dependerá del volumen
+                    colorscale: 'Reds',
+                    line: { color: '#b71c1c', width: 1 }
+                },
+                text: y, // Mostrar el número encima de la barra
+                textposition: 'auto'
+            };
+
+            const layout = {
+                xaxis: { 
+                    title: '', 
+                    tickangle: -45, // Inclinamos las letras para que quepan bien
+                    automargin: true 
+                },
+                yaxis: { 
+                    title: 'Cantidad de Envíos' 
+                },
+                margin: { t: 20, b: 120, l: 50, r: 20 },
+                plot_bgcolor: '#f4f6f9',
+                paper_bgcolor: '#ffffff'
+            };
+
+            Plotly.newPlot('mapa', [trace], layout, {responsive: true});
+            
+            // IMPORTANTE: Quitamos el evento de clic para que Plotly no intente hacer un "drill-down" infinito desde la gráfica
+            document.getElementById('mapa').removeAllListeners('plotly_click');
+        }
+    </script>
+</body>
+</html>
