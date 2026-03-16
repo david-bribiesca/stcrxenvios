@@ -15,6 +15,7 @@
         h1 { margin: 0; font-size: 24px; }
         h2 { margin-top: 0; font-size: 18px; color: #333; margin-bottom: 15px; }
         label.filtro-titulo { display: block; margin: 15px 0 10px; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        select { width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
         
         .grid-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
         .opcion-item { display: flex; align-items: center; font-size: 14px; color: #444; }
@@ -35,6 +36,12 @@
     <div class="container">
         <div class="sidebar">
             <h2>Filtros</h2>
+
+            <label class="filtro-titulo" for="filtro-pais">País a Visualizar</label>
+            <select id="filtro-pais">
+                <option value="México">🇲🇽 México</option>
+                <option value="Estados Unidos">🇺🇸 Estados Unidos</option>
+            </select>
             
             <label class="filtro-titulo">Años</label>
             <div class="grid-opciones" id="filtro-anios">
@@ -56,54 +63,99 @@
                 <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="12" checked> Diciembre</label>
             </div>
 
-            <button id="btn-volver" class="btn-volver">🔙 Volver al Mapa Nacional</button>
+            <button id="btn-volver" class="btn-volver">🔙 Volver al Mapa</button>
         </div>
 
         <div class="main-content">
-            <div id="loading">Cargando base de datos geográfica...</div>
-            <h2 id="titulo-mapa">Mapa Coroplético Nacional</h2>
+            <div id="loading">Cargando base de datos...</div>
+            <h2 id="titulo-mapa">Cargando...</h2>
             <div id="mapa"></div>
         </div>
     </div>
 
     <script>
         let datosOriginales = [];
-        let geojsonEstados = null;
+        let geojsonEstadosMexico = null;
         let estadoActual = null; 
 
-        // Función para limpiar nombres y agrupar bien las ciudades (quita acentos y mayúsculas)
+        // Diccionario para convertir los nombres de estados de EE.UU. a sus abreviaturas (Requisito de Plotly)
+        const usaAbreviaturas = {
+            'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+            'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+            'Hawái': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+            'Kentucky': 'KY', 'Luisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD', 'Massachusetts': 'MA',
+            'Michigan': 'MI', 'Minnesota': 'MN', 'Misisipi': 'MS', 'Misuri': 'MO', 'Montana': 'MT',
+            'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'Nueva Jersey': 'NJ', 'Nuevo México': 'NM',
+            'Nueva York': 'NY', 'Carolina del Norte': 'NC', 'Dakota del Norte': 'ND', 'Ohio': 'OH',
+            'Oklahoma': 'OK', 'Oregón': 'OR', 'Pensilvania': 'PA', 'Rhode Island': 'RI', 'Carolina del Sur': 'SC',
+            'Dakota del Sur': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+            'Virginia': 'VA', 'Washington': 'WA', 'Virginia Occidental': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
+        };
+        // Para cuando queramos mostrar el nombre completo de vuelta en el título
+        const usaNombresCompletos = Object.fromEntries(Object.entries(usaAbreviaturas).map(([k, v]) => [v, k]));
+
         function limpiarTexto(texto) {
             if (!texto) return "";
             return texto.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         }
 
-        // 1. Cargar geometrías de los estados
+        // 1. Cargar el mapa de México (Plotly ya trae el de EE. UU. integrado)
         fetch('https://raw.githubusercontent.com/angelnmara/geojson/master/mexicoHigh.json')
             .then(res => res.json())
             .then(estados => {
-                geojsonEstados = estados;
-                document.getElementById('loading').style.display = 'none';
+                geojsonEstadosMexico = estados;
                 cargarDatosCSV();
             });
 
         function cargarDatosCSV() {
-            Papa.parse("datos_web_dashboard.csv", {
+            // AHORA LEEMOS DIRECTAMENTE TU ARCHIVO FORMATEADO, YA NO OCUPAMOS COORDENADAS
+            Papa.parse("datos_dashboard_seguro.csv", {
                 download: true,
                 header: true,
                 skipEmptyLines: true,
                 complete: function(results) {
-                    datosOriginales = results.data;
-                    inicializarFiltros();
-                    actualizarDashboard();
+                    document.getElementById('loading').style.display = 'none';
+                    procesarDatos(results.data);
                 }
             });
         }
 
+        function procesarDatos(dataCSV) {
+            datosOriginales = [];
+            
+            dataCSV.forEach(d => {
+                // Solo nos interesan envíos que tengan Fecha y País
+                if(d['Fecha de Creación'] && d['País']) {
+                    let partesFecha = d['Fecha de Creación'].split('-');
+                    if(partesFecha.length >= 2) {
+                        d.Anio = partesFecha[0];
+                        d.Mes = parseInt(partesFecha[1]).toString(); // Quita los ceros a la izquierda
+                    }
+                    
+                    // Normalizar el estado según el país para que coincidan con los mapas
+                    if(d.País === 'México') {
+                        if(d.Estado === 'Estado de México') d.Estado_Geo = 'México';
+                        else if(d.Estado === 'Michoacán de Ocampo') d.Estado_Geo = 'Michoacán';
+                        else if(d.Estado === 'Veracruz de Ignacio de la Llave') d.Estado_Geo = 'Veracruz';
+                        else if(d.Estado === 'Coahuila de Zaragoza') d.Estado_Geo = 'Coahuila';
+                        else d.Estado_Geo = d.Estado;
+                    } 
+                    else if (d.País === 'Estados Unidos') {
+                        d.Estado_Geo = usaAbreviaturas[d.Estado] || d.Estado; // Pasamos a siglas (ej. Texas -> TX)
+                    }
+
+                    datosOriginales.push(d);
+                }
+            });
+
+            inicializarFiltros();
+            actualizarDashboard();
+        }
+
         function inicializarFiltros() {
-            // Extraer años únicos y crear las casillas
             const anios = [...new Set(datosOriginales.map(d => d.Anio).filter(a => a))].sort();
             const contenedorAnios = document.getElementById('filtro-anios');
-            contenedorAnios.innerHTML = ''; // Limpiar por si acaso
+            contenedorAnios.innerHTML = ''; 
             
             anios.forEach(anio => {
                 const label = document.createElement('label');
@@ -112,17 +164,17 @@
                 contenedorAnios.appendChild(label);
             });
 
-            // Asignar eventos de actualización a los checkboxes de años
-            document.querySelectorAll('.anio-checkbox').forEach(cb => {
-                cb.addEventListener('change', actualizarDashboard);
+            // Asignar eventos a todos los controles
+            document.getElementById('filtro-pais').addEventListener('change', () => {
+                estadoActual = null; // Reiniciar vista al cambiar de país
+                document.getElementById('btn-volver').style.display = 'none';
+                actualizarDashboard();
             });
-            
-            // Asignar eventos a los checkboxes de meses
-            document.querySelectorAll('.mes-checkbox').forEach(cb => {
+
+            document.querySelectorAll('.anio-checkbox, .mes-checkbox').forEach(cb => {
                 cb.addEventListener('change', actualizarDashboard);
             });
 
-            // Evento para el botón de regresar al mapa
             document.getElementById('btn-volver').addEventListener('click', () => {
                 estadoActual = null;
                 document.getElementById('btn-volver').style.display = 'none';
@@ -131,53 +183,67 @@
         }
 
         function actualizarDashboard() {
+            const paisSel = document.getElementById('filtro-pais').value;
             const aniosSeleccionados = Array.from(document.querySelectorAll('.anio-checkbox:checked')).map(cb => cb.value);
             const mesesSeleccionados = Array.from(document.querySelectorAll('.mes-checkbox:checked')).map(cb => cb.value);
 
             let datosFiltrados = datosOriginales.filter(d => {
-                return aniosSeleccionados.includes(d.Anio) && mesesSeleccionados.includes(d.Mes);
+                return d.País === paisSel && aniosSeleccionados.includes(d.Anio) && mesesSeleccionados.includes(d.Mes);
             });
 
             if (estadoActual === null) {
-                dibujarMapaNacional(datosFiltrados);
+                dibujarMapa(datosFiltrados, paisSel);
             } else {
-                dibujarGraficaBarras(datosFiltrados, estadoActual);
+                dibujarGraficaBarras(datosFiltrados, estadoActual, paisSel);
             }
         }
 
-        function dibujarMapaNacional(datos) {
-            document.getElementById('titulo-mapa').textContent = "Mapa Nacional (Clic en un estado para ver gráfica de ciudades)";
+        function dibujarMapa(datos, pais) {
+            document.getElementById('titulo-mapa').textContent = `Mapa de ${pais} (Clic en un estado para ver ciudades)`;
             
             let conteoEstados = {};
             datos.forEach(d => {
-                if(d.Estado_Geo) {
-                    conteoEstados[d.Estado_Geo] = (conteoEstados[d.Estado_Geo] || 0) + 1;
-                }
+                if(d.Estado_Geo) conteoEstados[d.Estado_Geo] = (conteoEstados[d.Estado_Geo] || 0) + 1;
             });
 
             const estados = Object.keys(conteoEstados);
             const valores = Object.values(conteoEstados);
 
-            const trace = {
-                type: 'choropleth',
-                geojson: geojsonEstados,
-                locations: estados,
-                z: valores,
-                featureidkey: 'properties.name',
-                colorscale: 'Reds',
-                showscale: true,
-                marker: { line: { color: '#ffffff', width: 0.5 } }
-            };
-
-            const layout = {
-                geo: { fitbounds: "locations", visible: false },
+            let trace = {};
+            let layout = {
                 margin: { t: 0, b: 0, l: 0, r: 0 },
                 dragmode: false
             };
 
+            // Configuración dinámica dependiendo del País
+            if (pais === 'México') {
+                trace = {
+                    type: 'choropleth',
+                    geojson: geojsonEstadosMexico,
+                    locations: estados,
+                    z: valores,
+                    featureidkey: 'properties.name',
+                    colorscale: 'Reds',
+                    showscale: true,
+                    marker: { line: { color: '#ffffff', width: 0.5 } }
+                };
+                layout.geo = { fitbounds: "locations", visible: false };
+            } 
+            else if (pais === 'Estados Unidos') {
+                trace = {
+                    type: 'choropleth',
+                    locationmode: 'USA-states', // Usa el mapa nativo de Plotly para EE.UU.
+                    locations: estados, // Son las siglas (TX, CA, NY...)
+                    z: valores,
+                    colorscale: 'Blues', // Ponemos EE.UU. en azul para diferenciarlo visualmente
+                    showscale: true,
+                    marker: { line: { color: '#ffffff', width: 0.5 } }
+                };
+                layout.geo = { scope: 'usa' };
+            }
+
             Plotly.newPlot('mapa', [trace], layout, {responsive: true});
 
-            // Evento: Al hacer clic en el mapa, pasamos a la gráfica de barras
             document.getElementById('mapa').on('plotly_click', function(data){
                 if (data.points.length > 0) {
                     estadoActual = data.points[0].location;
@@ -187,61 +253,55 @@
             });
         }
 
-        function dibujarGraficaBarras(datos, estadoSeleccionado) {
-            document.getElementById('titulo-mapa').textContent = `Top Ciudades con Envíos en: ${estadoSeleccionado}`;
-
-            // Filtrar solo las ciudades del estado clickeado
-            let datosEstado = datos.filter(d => d.Estado_Geo === estadoSeleccionado);
+        function dibujarGraficaBarras(datos, estadoSeleccionado, pais) {
+            // Si es USA, convertimos la sigla (ej. "TX") al nombre real ("Texas") para el título
+            let nombreEstadoTitulo = pais === 'Estados Unidos' ? (usaNombresCompletos[estadoSeleccionado] || estadoSeleccionado) : estadoSeleccionado;
             
+            document.getElementById('titulo-mapa').textContent = `Top Ciudades con Envíos en: ${nombreEstadoTitulo}`;
+
+            let datosEstado = datos.filter(d => d.Estado_Geo === estadoSeleccionado);
             let conteoUnificado = {};
 
-            // Agrupamos usando la función para limpiar acentos y mayúsculas
             datosEstado.forEach(d => {
                 let ciudadLimpia = limpiarTexto(d.Ciudad);
-                if (!conteoUnificado[ciudadLimpia]) {
-                    // Guardamos el nombre bonito (original) para mostrarlo en la gráfica
-                    conteoUnificado[ciudadLimpia] = { nombre: d.Ciudad, conteo: 0 };
+                if (ciudadLimpia) {
+                    if (!conteoUnificado[ciudadLimpia]) {
+                        conteoUnificado[ciudadLimpia] = { nombre: d.Ciudad, conteo: 0 };
+                    }
+                    conteoUnificado[ciudadLimpia].conteo += 1;
                 }
-                conteoUnificado[ciudadLimpia].conteo += 1;
             });
 
-            // Convertir el objeto a un arreglo y ordenarlo de mayor a menor
             let ciudadesArray = Object.values(conteoUnificado).sort((a, b) => b.conteo - a.conteo);
-            
-            // Separar nombres y valores para la gráfica
             let x = ciudadesArray.map(c => c.nombre);
             let y = ciudadesArray.map(c => c.conteo);
+
+            // Usar Rojo para México y Azul para USA en las barras
+            let escalaColor = pais === 'México' ? 'Reds' : 'Blues';
+            let colorBorde = pais === 'México' ? '#b71c1c' : '#0d47a1';
 
             const trace = {
                 x: x,
                 y: y,
                 type: 'bar',
                 marker: { 
-                    color: y, // El color dependerá del volumen
-                    colorscale: 'Reds',
-                    line: { color: '#b71c1c', width: 1 }
+                    color: y, 
+                    colorscale: escalaColor,
+                    line: { color: colorBorde, width: 1 }
                 },
-                text: y, // Mostrar el número encima de la barra
+                text: y, 
                 textposition: 'auto'
             };
 
             const layout = {
-                xaxis: { 
-                    title: '', 
-                    tickangle: -45, // Inclinamos las letras para que quepan bien
-                    automargin: true 
-                },
-                yaxis: { 
-                    title: 'Cantidad de Envíos' 
-                },
+                xaxis: { title: '', tickangle: -45, automargin: true },
+                yaxis: { title: 'Cantidad de Envíos' },
                 margin: { t: 20, b: 120, l: 50, r: 20 },
                 plot_bgcolor: '#f4f6f9',
                 paper_bgcolor: '#ffffff'
             };
 
             Plotly.newPlot('mapa', [trace], layout, {responsive: true});
-            
-            // IMPORTANTE: Quitamos el evento de clic para que Plotly no intente hacer un "drill-down" infinito desde la gráfica
             document.getElementById('mapa').removeAllListeners('plotly_click');
         }
     </script>
