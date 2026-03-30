@@ -10,8 +10,9 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; }
         header { background-color: #1a237e; color: white; padding: 15px 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .container { display: flex; padding: 20px; gap: 20px; }
-        .sidebar { background: white; padding: 20px; border-radius: 8px; width: 280px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); height: fit-content; }
-        .main-content { flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .sidebar { background: white; padding: 20px; border-radius: 8px; width: 280px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); height: fit-content; position: sticky; top: 20px; }
+        .main-content { flex: 1; display: flex; flex-direction: column; gap: 30px; }
+        .tarjeta { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         h1 { margin: 0; font-size: 24px; }
         h2 { margin-top: 0; font-size: 18px; color: #333; margin-bottom: 15px; }
         label.filtro-titulo { display: block; margin: 15px 0 10px; font-weight: bold; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
@@ -23,25 +24,23 @@
 
         .btn-volver { display: none; background: #e53935; color: white; border: none; padding: 12px 15px; border-radius: 4px; cursor: pointer; margin-top: 15px; width: 100%; font-weight: bold; font-size: 14px;}
         .btn-volver:hover { background: #c62828; }
-        #mapa { width: 100%; height: 600px; }
+        
+        .grafica-contenedor { width: 100%; height: 500px; }
         #loading { color: #1a237e; font-weight: bold; margin-bottom: 10px; }
+        
+        .header-ranking { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .header-ranking select { width: auto; margin-bottom: 0; padding: 6px 12px; }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>📦 Panel Interactivo de Envíos</h1>
+        <h1>📦 Panel Interactivo de Envíos ST CRX</h1>
     </header>
 
     <div class="container">
         <div class="sidebar">
-            <h2>Filtros</h2>
-
-            <label class="filtro-titulo" for="filtro-pais">País a Visualizar</label>
-            <select id="filtro-pais">
-                <option value="México">🇲🇽 México</option>
-                <option value="Estados Unidos">🇺🇸 Estados Unidos</option>
-            </select>
+            <h2>Filtros de Tiempo</h2>
             
             <label class="filtro-titulo">Años</label>
             <div class="grid-opciones" id="filtro-anios">
@@ -62,14 +61,35 @@
                 <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="11" checked> Noviembre</label>
                 <label class="opcion-item"><input type="checkbox" class="mes-checkbox" value="12" checked> Diciembre</label>
             </div>
-
-            <button id="btn-volver" class="btn-volver">🔙 Volver al Mapa</button>
         </div>
 
         <div class="main-content">
             <div id="loading">Cargando base de datos...</div>
-            <h2 id="titulo-mapa">Cargando...</h2>
-            <div id="mapa"></div>
+            
+            <div class="tarjeta">
+                <label class="filtro-titulo" for="filtro-pais">Filtro del Mapa</label>
+                <select id="filtro-pais" style="width: 250px;">
+                    <option value="México">🇲🇽 Mapa de México</option>
+                    <option value="Estados Unidos">🇺🇸 Mapa de Estados Unidos</option>
+                </select>
+
+                <h2 id="titulo-mapa">Cargando Mapa...</h2>
+                <div id="mapa" class="grafica-contenedor"></div>
+                <button id="btn-volver" class="btn-volver">🔙 Volver al Mapa Nacional</button>
+            </div>
+
+            <div class="tarjeta">
+                <div class="header-ranking">
+                    <h2 style="margin: 0;">🏆 Top Ciudades con Más Envíos</h2>
+                    <select id="filtro-pais-ranking">
+                        <option value="Ambos">🌎 Ambos Países</option>
+                        <option value="México">🇲🇽 Solo México</option>
+                        <option value="Estados Unidos">🇺🇸 Solo EE. UU.</option>
+                    </select>
+                </div>
+                <div id="grafica-ranking" class="grafica-contenedor"></div>
+            </div>
+
         </div>
     </div>
 
@@ -78,27 +98,54 @@
         let geojsonEstadosMexico = null;
         let estadoActual = null; 
 
-        // Diccionario de EE.UU.
+        // 1. DICCIONARIOS DE TRADUCCIÓN
         const usaAbreviaturas = {
             'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
             'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
-            'Hawái': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+            'Hawai': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
             'Kentucky': 'KY', 'Luisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD', 'Massachusetts': 'MA',
             'Michigan': 'MI', 'Minnesota': 'MN', 'Misisipi': 'MS', 'Misuri': 'MO', 'Montana': 'MT',
-            'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'Nueva Jersey': 'NJ', 'Nuevo México': 'NM',
+            'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'Nueva Jersey': 'NJ', 'Nuevo Mexico': 'NM',
             'Nueva York': 'NY', 'Carolina del Norte': 'NC', 'Dakota del Norte': 'ND', 'Ohio': 'OH',
-            'Oklahoma': 'OK', 'Oregón': 'OR', 'Pensilvania': 'PA', 'Rhode Island': 'RI', 'Carolina del Sur': 'SC',
+            'Oklahoma': 'OK', 'Oregon': 'OR', 'Pensilvania': 'PA', 'Rhode Island': 'RI', 'Carolina del Sur': 'SC',
             'Dakota del Sur': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
             'Virginia': 'VA', 'Washington': 'WA', 'Virginia Occidental': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
         };
         const usaNombresCompletos = Object.fromEntries(Object.entries(usaAbreviaturas).map(([k, v]) => [v, k]));
 
+        // Empata tus nombres sin acentos del CSV con el nombre exacto que requiere el GeoJSON
+        const mxNombresGeoJSON = {
+            'Aguascalientes': 'Aguascalientes', 'Baja California': 'Baja California', 'Baja California Sur': 'Baja California Sur',
+            'Campeche': 'Campeche', 'Chiapas': 'Chiapas', 'Chihuahua': 'Chihuahua', 'Ciudad de Mexico': 'Ciudad de México',
+            'Coahuila de Zaragoza': 'Coahuila de Zaragoza', 'Coahuila': 'Coahuila de Zaragoza', 'Colima': 'Colima',
+            'Durango': 'Durango', 'Guanajuato': 'Guanajuato', 'Guerrero': 'Guerrero', 'Hidalgo': 'Hidalgo',
+            'Jalisco': 'Jalisco', 'Estado de Mexico': 'México', 'Mexico': 'México', 'Michoacan de Ocampo': 'Michoacán de Ocampo',
+            'Michoacan': 'Michoacán de Ocampo', 'Morelos': 'Morelos', 'Nayarit': 'Nayarit', 'Nuevo Leon': 'Nuevo León',
+            'Oaxaca': 'Oaxaca', 'Puebla': 'Puebla', 'Queretaro': 'Querétaro', 'Quintana Roo': 'Quintana Roo',
+            'San Luis Potosi': 'San Luis Potosí', 'Sinaloa': 'Sinaloa', 'Sonora': 'Sonora', 'Tabasco': 'Tabasco',
+            'Tamaulipas': 'Tamaulipas', 'Tlaxcala': 'Tlaxcala', 'Veracruz de Ignacio de la Llave': 'Veracruz de Ignacio de la Llave',
+            'Veracruz': 'Veracruz de Ignacio de la Llave', 'Yucatan': 'Yucatán', 'Zacatecas': 'Zacatecas'
+        };
+
+        // Abreviaturas para la etiqueta del ranking, ahora usando como llave los nombres acentuados de Plotly
+        const mxAbreviaturas = {
+            'Aguascalientes': 'AGS', 'Baja California': 'BC', 'Baja California Sur': 'BCS',
+            'Campeche': 'CAMP', 'Chiapas': 'CHIS', 'Chihuahua': 'CHIH', 'Ciudad de México': 'CDMX',
+            'Coahuila de Zaragoza': 'COAH', 'Colima': 'COL', 'Durango': 'DGO', 'Guanajuato': 'GTO',
+            'Guerrero': 'GRO', 'Hidalgo': 'HGO', 'Jalisco': 'JAL', 'México': 'MEX',
+            'Michoacán de Ocampo': 'MICH', 'Morelos': 'MOR', 'Nayarit': 'NAY', 'Nuevo León': 'NL',
+            'Oaxaca': 'OAX', 'Puebla': 'PUE', 'Querétaro': 'QRO', 'Quintana Roo': 'ROO',
+            'San Luis Potosí': 'SLP', 'Sinaloa': 'SIN', 'Sonora': 'SON', 'Tabasco': 'TAB',
+            'Tamaulipas': 'TAMPS', 'Tlaxcala': 'TLAX', 'Veracruz de Ignacio de la Llave': 'VER', 'Yucatán': 'YUC',
+            'Zacatecas': 'ZAC'
+        };
+
         function limpiarTexto(texto) {
             if (!texto) return "";
-            return texto.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return texto.trim().toUpperCase();
         }
 
-        // Cargar mapa de México
+        // 2. Cargar mapa y datos
         fetch('https://raw.githubusercontent.com/angelnmara/geojson/master/mexicoHigh.json')
             .then(res => res.json())
             .then(estados => {
@@ -107,7 +154,7 @@
             });
 
         function cargarDatosCSV() {
-            Papa.parse("datos_dashboard_seguro.csv", {
+            Papa.parse("datos_dashboard_seguro_sin_acentos.csv", {
                 download: true,
                 header: true,
                 skipEmptyLines: true,
@@ -129,14 +176,12 @@
                         d.Mes = parseInt(partesFecha[1]).toString();
                     }
                     
-                    if(d.País === 'México') {
-                        if(d.Estado === 'Estado de México') d.Estado_Geo = 'México';
-                        else if(d.Estado === 'Michoacán de Ocampo') d.Estado_Geo = 'Michoacán';
-                        else if(d.Estado === 'Veracruz de Ignacio de la Llave') d.Estado_Geo = 'Veracruz';
-                        else if(d.Estado === 'Coahuila de Zaragoza') d.Estado_Geo = 'Coahuila';
-                        else d.Estado_Geo = d.Estado;
+                    if(d.País === 'Mexico') {
+                        // Asignamos el nombre geográfico acentuado para el mapa
+                        d.Estado_Geo = mxNombresGeoJSON[d.Estado] || d.Estado;
                     } 
                     else if (d.País === 'Estados Unidos') {
+                        // Asignamos la abreviatura para EE.UU.
                         d.Estado_Geo = usaAbreviaturas[d.Estado] || d.Estado; 
                     }
 
@@ -145,9 +190,10 @@
             });
 
             inicializarFiltros();
-            actualizarDashboard();
+            actualizarTodo();
         }
 
+        // 3. Funciones de Filtrado e Inicialización
         function inicializarFiltros() {
             const anios = [...new Set(datosOriginales.map(d => d.Anio).filter(a => a))].sort();
             const contenedorAnios = document.getElementById('filtro-anios');
@@ -163,38 +209,53 @@
             document.getElementById('filtro-pais').addEventListener('change', () => {
                 estadoActual = null; 
                 document.getElementById('btn-volver').style.display = 'none';
-                actualizarDashboard();
+                actualizarMapa();
             });
 
+            document.getElementById('filtro-pais-ranking').addEventListener('change', actualizarRanking);
+
             document.querySelectorAll('.anio-checkbox, .mes-checkbox').forEach(cb => {
-                cb.addEventListener('change', actualizarDashboard);
+                cb.addEventListener('change', actualizarTodo);
             });
 
             document.getElementById('btn-volver').addEventListener('click', () => {
                 estadoActual = null;
                 document.getElementById('btn-volver').style.display = 'none';
-                actualizarDashboard();
+                actualizarMapa();
             });
         }
 
-        function actualizarDashboard() {
-            const paisSel = document.getElementById('filtro-pais').value;
+        function actualizarTodo() {
+            actualizarMapa();
+            actualizarRanking();
+        }
+
+        function obtenerDatosFiltradosTiempo() {
             const aniosSeleccionados = Array.from(document.querySelectorAll('.anio-checkbox:checked')).map(cb => cb.value);
             const mesesSeleccionados = Array.from(document.querySelectorAll('.mes-checkbox:checked')).map(cb => cb.value);
 
-            let datosFiltrados = datosOriginales.filter(d => {
-                return d.País === paisSel && aniosSeleccionados.includes(d.Anio) && mesesSeleccionados.includes(d.Mes);
+            return datosOriginales.filter(d => {
+                return aniosSeleccionados.includes(d.Anio) && mesesSeleccionados.includes(d.Mes);
             });
+        }
+
+        // 4. Funciones del Mapa y Gráfica por Estado
+        function actualizarMapa() {
+            const paisSel = document.getElementById('filtro-pais').value;
+            const paisFiltro = paisSel === 'México' ? 'Mexico' : paisSel;
+            
+            let datosFiltrados = obtenerDatosFiltradosTiempo().filter(d => d.País === paisFiltro);
 
             if (estadoActual === null) {
-                dibujarMapa(datosFiltrados, paisSel);
+                dibujarMapa(datosFiltrados, paisFiltro);
             } else {
-                dibujarGraficaBarras(datosFiltrados, estadoActual, paisSel);
+                dibujarGraficaBarrasEstado(datosFiltrados, estadoActual, paisFiltro);
             }
         }
 
         function dibujarMapa(datos, pais) {
-            document.getElementById('titulo-mapa').textContent = `Mapa de ${pais} (Clic en un estado para ver ciudades)`;
+            let nombreMostrar = pais === 'Mexico' ? 'México' : pais;
+            document.getElementById('titulo-mapa').textContent = `Mapa de ${nombreMostrar} (Clic en un estado para ver ciudades)`;
             
             let conteoEstados = {};
             datos.forEach(d => {
@@ -205,12 +266,9 @@
             const valores = Object.values(conteoEstados);
 
             let trace = {};
-            let layout = {
-                margin: { t: 0, b: 0, l: 0, r: 0 },
-                dragmode: false
-            };
+            let layout = { margin: { t: 0, b: 0, l: 0, r: 0 }, dragmode: false };
 
-            if (pais === 'México') {
+            if (pais === 'Mexico') {
                 trace = {
                     type: 'choropleth',
                     geojson: geojsonEstadosMexico,
@@ -225,19 +283,17 @@
                 layout.geo = { fitbounds: "locations", visible: false };
             } 
             else if (pais === 'Estados Unidos') {
-                // Generamos un arreglo con los nombres completos para el Hover
                 const nombresCompletos = estados.map(sigla => usaNombresCompletos[sigla] || sigla);
-
                 trace = {
                     type: 'choropleth',
                     locationmode: 'USA-states',
                     locations: estados,
                     z: valores,
-                    text: nombresCompletos, // Pasamos el nombre completo de la traducción
-                    colorscale: 'Greens', // Cambiado a Verdes
+                    text: nombresCompletos,
+                    colorscale: 'Greens',
                     showscale: true,
                     marker: { line: { color: '#ffffff', width: 0.5 } },
-                    hovertemplate: '<b>%{text}</b><br>Total Envíos: %{z}<extra></extra>' // %{text} lee el nombre completo
+                    hovertemplate: '<b>%{text}</b><br>Total Envíos: %{z}<extra></extra>'
                 };
                 layout.geo = { scope: 'usa' };
             }
@@ -248,14 +304,13 @@
                 if (data.points.length > 0) {
                     estadoActual = data.points[0].location;
                     document.getElementById('btn-volver').style.display = 'block';
-                    actualizarDashboard();
+                    actualizarMapa();
                 }
             });
         }
 
-        function dibujarGraficaBarras(datos, estadoSeleccionado, pais) {
+        function dibujarGraficaBarrasEstado(datos, estadoSeleccionado, pais) {
             let nombreEstadoTitulo = pais === 'Estados Unidos' ? (usaNombresCompletos[estadoSeleccionado] || estadoSeleccionado) : estadoSeleccionado;
-            
             document.getElementById('titulo-mapa').textContent = `Top Ciudades con Envíos en: ${nombreEstadoTitulo}`;
 
             let datosEstado = datos.filter(d => d.Estado_Geo === estadoSeleccionado);
@@ -275,21 +330,13 @@
             let x = ciudadesArray.map(c => c.nombre);
             let y = ciudadesArray.map(c => c.conteo);
 
-            // Cambiar los colores de las barras dependiendo del país seleccionado
-            let escalaColor = pais === 'México' ? 'Reds' : 'Greens';
-            let colorBorde = pais === 'México' ? '#b71c1c' : '#1b5e20';
+            let escalaColor = pais === 'Mexico' ? 'Reds' : 'Greens';
+            let colorBorde = pais === 'Mexico' ? '#b71c1c' : '#1b5e20';
 
             const trace = {
-                x: x,
-                y: y,
-                type: 'bar',
-                marker: { 
-                    color: y, 
-                    colorscale: escalaColor,
-                    line: { color: colorBorde, width: 1 }
-                },
-                text: y, 
-                textposition: 'auto',
+                x: x, y: y, type: 'bar',
+                marker: { color: y, colorscale: escalaColor, line: { color: colorBorde, width: 1 } },
+                text: y, textposition: 'auto',
                 hovertemplate: '<b>%{x}</b><br>Envíos: %{y}<extra></extra>'
             };
 
@@ -297,12 +344,70 @@
                 xaxis: { title: '', tickangle: -45, automargin: true },
                 yaxis: { title: 'Cantidad de Envíos' },
                 margin: { t: 20, b: 120, l: 50, r: 20 },
-                plot_bgcolor: '#f4f6f9',
-                paper_bgcolor: '#ffffff'
+                plot_bgcolor: '#f4f6f9', paper_bgcolor: '#ffffff'
             };
 
             Plotly.newPlot('mapa', [trace], layout, {responsive: true});
             document.getElementById('mapa').removeAllListeners('plotly_click');
+        }
+
+        // 5. Funciones del Ranking Global
+        function actualizarRanking() {
+            let datosFiltrados = obtenerDatosFiltradosTiempo();
+            
+            const paisRankingSel = document.getElementById('filtro-pais-ranking').value;
+            const paisFiltro = paisRankingSel === 'México' ? 'Mexico' : paisRankingSel;
+
+            if (paisFiltro !== 'Ambos') {
+                datosFiltrados = datosFiltrados.filter(d => d.País === paisFiltro);
+            }
+
+            let conteoUnificado = {};
+
+            datosFiltrados.forEach(d => {
+                let ciudadLimpia = limpiarTexto(d.Ciudad);
+                if (ciudadLimpia) {
+                    
+                    let siglaEstado = "";
+                    if (d.País === 'Mexico') {
+                        // Como d.Estado_Geo ya tiene acentos, la llave de mxAbreviaturas debe buscar ahí
+                        siglaEstado = mxAbreviaturas[d.Estado_Geo] || d.Estado_Geo;
+                    } else {
+                        siglaEstado = d.Estado_Geo; 
+                    }
+
+                    let key = ciudadLimpia + '|' + siglaEstado;
+                    let nombreMostrar = d.Ciudad + ', ' + siglaEstado;
+
+                    if (!conteoUnificado[key]) {
+                        conteoUnificado[key] = { nombre: nombreMostrar, conteo: 0, pais: d.País };
+                    }
+                    conteoUnificado[key].conteo += 1;
+                }
+            });
+
+            let ciudadesArray = Object.values(conteoUnificado).sort((a, b) => b.conteo - a.conteo).slice(0, 15);
+            ciudadesArray.reverse();
+
+            let x = ciudadesArray.map(c => c.conteo);
+            let y = ciudadesArray.map(c => c.nombre);
+            let colores = ciudadesArray.map(c => c.pais === 'Mexico' ? '#ef5350' : '#66bb6a'); 
+
+            const traceRanking = {
+                x: x, y: y, type: 'bar', orientation: 'h', 
+                marker: { color: colores, line: { color: '#333', width: 1 } },
+                text: x, textposition: 'auto',
+                hovertemplate: '<b>%{y}</b><br>Envíos: %{x}<extra></extra>'
+            };
+
+            const layoutRanking = {
+                margin: { t: 20, b: 40, l: 150, r: 20 },
+                xaxis: { title: 'Cantidad de Envíos Totales' },
+                yaxis: { title: '', automargin: true },
+                plot_bgcolor: '#f4f6f9', paper_bgcolor: '#ffffff'
+            };
+
+            Plotly.newPlot('grafica-ranking', [traceRanking], layoutRanking, {responsive: true});
         }
     </script>
 </body>
